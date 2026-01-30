@@ -199,7 +199,7 @@
             const wsUri = `${protocol}//${window.location.hostname}:8080`;
             
             try {
-                ws = new WebSocket(wsUri);
+                ws = new WebSocket(wsUri, "example-protocol");
                 
                 ws.onopen = function(event) {
                     console.log('Connected to WebSocket server');
