@@ -17,6 +17,7 @@ typedef struct client_info {
 struct per_session_data__example {
     struct per_session_data__example *pss_list;
     struct lws *wsi;
+    int expecting_pong_response;  // 标记是否需要发送pong响应
 };
 
 // 全局客户端链表
@@ -86,24 +87,53 @@ static int callback_example(struct lws *wsi, enum lws_callback_reasons reason,
             add_client(wsi, NULL);
             break;
 
-        case LWS_CALLBACK_SERVER_WRITEABLE:
-            break;
-
-        case LWS_CALLBACK_RECEIVE: {
-            lwsl_user("Received data: %s\n", (char *)in);
+        case LWS_CALLBACK_SERVER_WRITEABLE: {
+            struct per_session_data__example *pss = (struct per_session_data__example *)user;
             
-            // 检查是否是特殊命令
-            if (strncmp((char *)in, "ping", 4) == 0) {
+            if (pss->expecting_pong_response) {
+                // 发送pong响应
                 const char *pong_msg = "{\"type\":\"pong\",\"data\":\"Server pong\"}";
                 if (lws_write(wsi, (unsigned char *)pong_msg, strlen(pong_msg), LWS_WRITE_TEXT) < 0) {
                     lwsl_err("Failed to write pong message\n");
                     return -1;
                 }
-            } else {
-                // 对于所有其他消息，返回 "received" 确认
+                pss->expecting_pong_response = 0; // 重置标记
+                
+                // 然后再发送received确认
                 const char *received_msg = "{\"type\":\"received\",\"data\":\"received\"}";
                 if (lws_write(wsi, (unsigned char *)received_msg, strlen(received_msg), LWS_WRITE_TEXT) < 0) {
                     lwsl_err("Failed to write received confirmation\n");
+                    return -1;
+                }
+            } else {
+                // 发送received确认
+                const char *received_msg = "{\"type\":\"received\",\"data\":\"received\"}";
+                if (lws_write(wsi, (unsigned char *)received_msg, strlen(received_msg), LWS_WRITE_TEXT) < 0) {
+                    lwsl_err("Failed to write received confirmation\n");
+                    return -1;
+                }
+            }
+            break;
+        }
+
+        case LWS_CALLBACK_RECEIVE: {
+            lwsl_user("Received data: %s\n", (char *)in);
+            
+            struct per_session_data__example *pss = (struct per_session_data__example *)user;
+            
+            // 检查是否是特殊命令
+            if (strncmp((char *)in, "ping", 4) == 0) {
+                // 设置标记，稍后发送pong和received响应
+                pss->expecting_pong_response = 1;
+                if (lws_callback_on_writable(wsi) < 0) {
+                    lwsl_err("Failed to request writable callback\n");
+                    return -1;
+                }
+            } else {
+                // 设置标记，稍后发送received响应
+                pss->expecting_pong_response = 0;
+                if (lws_callback_on_writable(wsi) < 0) {
+                    lwsl_err("Failed to request writable callback\n");
                     return -1;
                 }
             }
