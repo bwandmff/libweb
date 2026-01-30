@@ -88,8 +88,6 @@ static int callback_example(struct lws *wsi, enum lws_callback_reasons reason,
             break;
 
         case LWS_CALLBACK_SERVER_WRITEABLE: {
-            struct per_session_data__example *pss = (struct per_session_data__example *)user;
-            
             if (pss->expecting_pong_response) {
                 // 发送pong响应
                 const char *pong_msg = "{\"type\":\"pong\",\"data\":\"Server pong\"}";
