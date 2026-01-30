@@ -8,23 +8,22 @@ libweb 是一个演示项目，展示了如何使用 libwebsockets 库创建一�
 
 - **服务器端**：使用 C 语言和 libwebsockets 库实现的 HTTP 和 WebSocket 服务器
 - **客户端**：HTML 页面，包含 JavaScript 实现的 WebSocket 客户端
-- **实时通信**：支持多客户端连接和消息广播功能
+- **实时通信**：支持双向通信，服务器可确认收到的消息
 - **用户界面**：友好的 Web 界面，支持消息发送、接收和连接状态显示
 
 ## 功能特性
 
 - ✅ HTTP 服务器 - 提供 Web 页面服务
 - ✅ WebSocket 服务器 - 支持实时双向通信
-- ✅ 多客户端支持 - 可同时处理多个客户端连接
-- ✅ 消息广播 - 服务器可将消息广播给所有连接的客户端
+- ✅ 消息确认 - 服务器返回 "received" 确认收到的消息
 - ✅ Ping/Pong 功能 - 测试连接健康状况
 - ✅ 响应式界面 - 美观的 Web 界面，实时显示消息
+- ✅ 协议匹配 - 正确的 WebSocket 协议协商
 
 ## 系统要求
 
 - Linux 或 macOS 操作系统
 - C 编译器 (GCC 或 Clang)
-- CMake (可选，也可以直接使用 gcc)
 - libwebsockets 开发库
 
 ## 安装依赖
@@ -47,7 +46,7 @@ brew install libwebsockets
 
 ## 构建项目
 
-### 方法一：使用 gcc 直接编译（推荐）
+### 方法一：使用 gcc 直接编译
 ```bash
 cd libweb
 gcc -I/usr/include -L/usr/lib/aarch64-linux-gnu src/server.c -lwebsockets -o libweb_server
@@ -73,10 +72,10 @@ make
 
 1. 启动服务器：`./libweb_server`
 2. 打开浏览器访问：`http://localhost:8080`
-3. 点击 "Connect" 按钮建立 WebSocket 连接
+3. 点击 "Connect" 按钮建立 WebSocket 连接（注意：客户端会自动使用 "example-protocol" 协议）
 4. 在输入框中输入消息并点击 "Send" 发送给服务器
-5. 使用 "Ping" 按钮测试服务器响应
-6. 服务器会将消息广播给所有连接的客户端
+5. 服务器会返回 "received" 确认，证明双向通信正常工作
+6. 使用 "Send Ping" 按钮测试服务器响应
 
 ## 项目结构
 
@@ -99,20 +98,23 @@ libweb/
 - **客户端**: HTML5 + JavaScript WebSocket API
 - **通信模式**: 全双工实时通信
 - **消息格式**: JSON 格式
+- **协议协商**: 客户端和服务端使用 "example-protocol" 协议
 
 ## 开发说明
 
 ### 服务器端功能
 - HTTP 请求处理
 - WebSocket 连接管理
-- 客户端消息广播
+- 消息确认机制
 - 连接状态跟踪
+- 正确的协议匹配
 
 ### 客户端功能
 - WebSocket 连接建立/断开
 - 消息发送与接收
 - 连接状态显示
 - 消息历史记录
+- 协议名称协商
 
 ## 故障排除
 
@@ -124,6 +126,10 @@ libweb/
 1. 确认服务器正在运行
 2. 检查防火墙设置
 3. 确认端口 8080 未被占用
+
+如果双向通信不工作：
+1. 确认客户端使用了正确的协议名 ("example-protocol")
+2. 检查服务器日志是否有错误信息
 
 ## 许可证
 
