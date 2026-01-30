@@ -1,0 +1,17 @@
+{
+  "name": "libweb",
+  "version": "1.0.0",
+  "description": "WebSocket & HTTP Server Demo using libwebsockets",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "websocket",
+    "http",
+    "libwebsockets",
+    "c"
+  ],
+  "author": "",
+  "license": "MIT"
+}
