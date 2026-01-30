@@ -1,0 +1,19 @@
+# 编译产物
+*.o
+*.a
+*.so
+libweb_server
+server.log
+
+# 构建目录
+build/
+cmake-build-debug/
+
+# IDE
+.vscode/
+.idea/
+
+# 临时文件
+*.swp
+*.swo
+*~
