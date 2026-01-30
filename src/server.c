@@ -2,9 +2,27 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define MAX_CLIENTS 10
 #define BUFFER_SIZE 4096
+
+// 交通灯状态定义
+typedef enum {
+    TL_RED,
+    TL_GREEN,
+    TL_YELLOW
+} tl_state_t;
+
+// 全局交通灯模拟数据
+typedef struct {
+    tl_state_t ns_state; // 南北向状态
+    int ns_timer;        // 南北向倒计时
+    tl_state_t ew_state; // 东西向状态
+    int ew_timer;        // 东西向倒计时
+} traffic_sim_t;
+
+static traffic_sim_t g_traffic = { TL_GREEN, 30, TL_RED, 33 };
 
 // 客户端连接信息结构
 typedef struct client_info {
@@ -13,42 +31,24 @@ typedef struct client_info {
     struct client_info *next;
 } client_info_t;
 
-// 协议相关的用户数据
-struct per_session_data__example {
-    struct per_session_data__example *pss_list;
-    struct lws *wsi;
-    int expecting_pong_response;  // 标记是否需要发送pong响应
-};
-
-// 全局客户端链表
 static client_info_t *clients_head = NULL;
 
-// 添加客户端到列表
 static void add_client(struct lws *wsi, const char *name) {
     client_info_t *new_client = malloc(sizeof(client_info_t));
     if (new_client) {
         new_client->wsi = wsi;
         strncpy(new_client->name, name ? name : "Anonymous", sizeof(new_client->name) - 1);
-        new_client->name[sizeof(new_client->name) - 1] = '\0';
         new_client->next = clients_head;
         clients_head = new_client;
-        lwsl_user("Client added: %s\n", new_client->name);
     }
 }
 
-// 移除客户端
 static void remove_client(struct lws *wsi) {
-    client_info_t *current = clients_head;
-    client_info_t *prev = NULL;
-    
+    client_info_t *current = clients_head, *prev = NULL;
     while (current) {
         if (current->wsi == wsi) {
-            if (prev) {
-                prev->next = current->next;
-            } else {
-                clients_head = current->next;
-            }
-            lwsl_user("Client removed: %s\n", current->name);
+            if (prev) prev->next = current->next;
+            else clients_head = current->next;
             free(current);
             return;
         }
@@ -57,200 +57,99 @@ static void remove_client(struct lws *wsi) {
     }
 }
 
-// 广播消息给所有客户端
-static int broadcast_message(const char *message, size_t length) {
+static void broadcast_message(const char *message) {
     client_info_t *current = clients_head;
-    int result = 0;
-    
+    size_t len = strlen(message);
+    unsigned char buf[LWS_PRE + BUFFER_SIZE];
+    memcpy(&buf[LWS_PRE], message, len);
+
     while (current) {
-        if (lws_write(current->wsi, (unsigned char *)message, length, LWS_WRITE_TEXT) < 0) {
-            lwsl_err("Failed to write to client %s\n", current->name);
-            result = -1;
-        }
+        lws_write(current->wsi, &buf[LWS_PRE], len, LWS_WRITE_TEXT);
         current = current->next;
     }
-    return result;
 }
 
-// 回显协议回调
+// 模拟器逻辑：每秒更新一次灯态
+static void update_traffic_sim() {
+    // 更新南北向
+    g_traffic.ns_timer--;
+    if (g_traffic.ns_timer <= 0) {
+        if (g_traffic.ns_state == TL_GREEN) { g_traffic.ns_state = TL_YELLOW; g_traffic.ns_timer = 3; }
+        else if (g_traffic.ns_state == TL_YELLOW) { g_traffic.ns_state = TL_RED; g_traffic.ns_timer = 30; }
+        else { g_traffic.ns_state = TL_GREEN; g_traffic.ns_timer = 30; }
+    }
+
+    // 更新东西向 (逻辑相反)
+    g_traffic.ew_timer--;
+    if (g_traffic.ew_timer <= 0) {
+        if (g_traffic.ew_state == TL_RED) { g_traffic.ew_state = TL_GREEN; g_traffic.ew_timer = 30; }
+        else if (g_traffic.ew_state == TL_GREEN) { g_traffic.ew_state = TL_YELLOW; g_traffic.ew_timer = 3; }
+        else { g_traffic.ew_state = TL_RED; g_traffic.ew_timer = 30; }
+    }
+
+    // 构造 JSON 并广播
+    char json[256];
+    const char *colors[] = {"red", "green", "yellow"};
+    snprintf(json, sizeof(json), 
+        "{\"type\":\"traffic_update\",\"ns\":{\"color\":\"%s\",\"timer\":%d},\"ew\":{\"color\":\"%s\",\"timer\":%d}}",
+        colors[g_traffic.ns_state], g_traffic.ns_timer,
+        colors[g_traffic.ew_state], g_traffic.ew_timer);
+    
+    broadcast_message(json);
+}
+
 static int callback_example(struct lws *wsi, enum lws_callback_reasons reason,
                            void *user, void *in, size_t len) {
-    struct per_session_data__example *pss = (struct per_session_data__example *)user;
-    unsigned char buffer[BUFFER_SIZE + LWS_SEND_BUFFER_PRE_PADDING + LWS_SEND_BUFFER_POST_PADDING];
-    unsigned char *p = &buffer[LWS_SEND_BUFFER_PRE_PADDING];
-    int n, m;
-
     switch (reason) {
         case LWS_CALLBACK_ESTABLISHED:
-            lwsl_user("WebSocket connection established\n");
-            // 添加新客户端
             add_client(wsi, NULL);
             break;
-
-        case LWS_CALLBACK_SERVER_WRITEABLE: {
-            if (pss->expecting_pong_response) {
-                // 发送pong响应
-                const char *pong_msg = "{\"type\":\"pong\",\"data\":\"Server pong\"}";
-                if (lws_write(wsi, (unsigned char *)pong_msg, strlen(pong_msg), LWS_WRITE_TEXT) < 0) {
-                    lwsl_err("Failed to write pong message\n");
-                    return -1;
-                }
-                pss->expecting_pong_response = 0; // 重置标记
-                
-                // 然后再发送received确认
-                const char *received_msg = "{\"type\":\"received\",\"data\":\"received\"}";
-                if (lws_write(wsi, (unsigned char *)received_msg, strlen(received_msg), LWS_WRITE_TEXT) < 0) {
-                    lwsl_err("Failed to write received confirmation\n");
-                    return -1;
-                }
-            } else {
-                // 发送received确认
-                const char *received_msg = "{\"type\":\"received\",\"data\":\"received\"}";
-                if (lws_write(wsi, (unsigned char *)received_msg, strlen(received_msg), LWS_WRITE_TEXT) < 0) {
-                    lwsl_err("Failed to write received confirmation\n");
-                    return -1;
-                }
-            }
-            break;
-        }
-
-        case LWS_CALLBACK_RECEIVE: {
-            lwsl_user("Received data: %s\n", (char *)in);
-            
-            struct per_session_data__example *pss = (struct per_session_data__example *)user;
-            
-            // 检查是否是特殊命令
-            if (strncmp((char *)in, "ping", 4) == 0) {
-                // 设置标记，稍后发送pong和received响应
-                pss->expecting_pong_response = 1;
-                if (lws_callback_on_writable(wsi) < 0) {
-                    lwsl_err("Failed to request writable callback\n");
-                    return -1;
-                }
-            } else {
-                // 设置标记，稍后发送received响应
-                pss->expecting_pong_response = 0;
-                if (lws_callback_on_writable(wsi) < 0) {
-                    lwsl_err("Failed to request writable callback\n");
-                    return -1;
-                }
-            }
-            break;
-        }
-
         case LWS_CALLBACK_CLOSED:
-            lwsl_user("WebSocket connection closed\n");
             remove_client(wsi);
             break;
-
-        default:
+        case LWS_CALLBACK_RECEIVE:
+            // 原有逻辑保留，也可扩展
             break;
+        default: break;
     }
-
     return 0;
 }
 
-// HTTP协议回调
 static int callback_http(struct lws *wsi, enum lws_callback_reasons reason,
                          void *user, void *in, size_t len) {
-    switch (reason) {
-        case LWS_CALLBACK_HTTP:
-            lwsl_user("HTTP request received\n");
-            
-            // 发送主页
-            if (lws_serve_http_file(wsi, "www/index.html", "text/html", NULL, 0) < 0) {
-                lwsl_err("Failed to serve index.html\n");
-                return -1;
-            }
-            break;
-
-        case LWS_CALLBACK_HTTP_BODY:
-            // 处理HTTP POST请求体
-            lwsl_user("HTTP body: %s\n", (char *)in);
-            break;
-
-        case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-            // 文件发送完成，关闭连接
-            return -1;
-
-        default:
-            break;
+    if (reason == LWS_CALLBACK_HTTP) {
+        lws_serve_http_file(wsi, "www/index.html", "text/html", NULL, 0);
     }
-
     return 0;
 }
 
-// 协议定义
 static struct lws_protocols protocols[] = {
-    {
-        "http-only",        // 协议名称
-        callback_http,      // HTTP回调函数
-        0,                  // 用户数据大小
-        0,                  // 接收缓冲区大小
-    },
-    {
-        "example-protocol", // 协议名称
-        callback_example,   // WebSocket回调函数
-        sizeof(struct per_session_data__example), // 用户数据大小
-        1024,               // 接收缓冲区大小
-    },
-    {
-        NULL, NULL, 0, 0    // 结束标记
-    }
-};
-
-// 扩展选项 - 用于提供静态文件
-static const struct lws_extension exts[] = {
-    {
-        "permessage-deflate",
-        lws_extension_callback_pm_deflate,
-        "permessage-deflate; client_max_window_bits"
-    },
-    {
-        NULL, NULL, NULL
-    }
+    { "http", callback_http, 0, 0 },
+    { "example-protocol", callback_example, 0, 1024 },
+    { NULL, NULL, 0, 0 }
 };
 
 int main(int argc, char **argv) {
     struct lws_context_creation_info info;
-    struct lws_context *context;
-    int n = 0;
-
-    // 设置服务器参数
     memset(&info, 0, sizeof(info));
     info.port = 8080;
-    info.iface = NULL;
     info.protocols = protocols;
-    info.extensions = exts;
-    info.ssl_cert_filepath = NULL;
-    info.ssl_private_key_filepath = NULL;
-    info.ssl_ca_filepath = NULL;
-    info.ssl_cipher_list = "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384";
-    info.gid = -1;
-    info.uid = -1;
-    info.options = 0;
-    info.max_http_header_pool = 1;
-    info.ka_time = 0;
-    info.ka_probes = 0;
-    info.ka_interval = 0;
+    info.gid = -1; info.uid = -1;
 
-    // 创建上下文
-    context = lws_create_context(&info);
-    if (!context) {
-        lwsl_err("libwebsockets init failed\n");
-        return -1;
+    struct lws_context *context = lws_create_context(&info);
+    if (!context) return -1;
+
+    time_t last_tick = 0;
+    while (1) {
+        lws_service(context, 50);
+        
+        time_t now = time(NULL);
+        if (now > last_tick) {
+            update_traffic_sim();
+            last_tick = now;
+        }
     }
 
-    lwsl_user("Starting server on port %d\n", info.port);
-    lwsl_user("Visit http://localhost:8080 in your browser\n");
-
-    // 事件循环
-    while (n >= 0) {
-        n = lws_service(context, 1000); // 1秒超时
-    }
-
-    // 清理
     lws_context_destroy(context);
-
     return 0;
 }

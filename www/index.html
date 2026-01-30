@@ -1,289 +1,181 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LibWeb WebSocket Demo</title>
+    <title>MEC 智慧路口监控系统</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f0f0f0;
+        :root {
+            --bg-color: #0f172a;
+            --road-color: #334155;
+            --line-color: #cbd5e1;
+            --red-light: #ef4444;
+            --green-light: #22c55e;
+            --yellow-light: #eab308;
+            --dim-light: #1e293b;
         }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: var(--bg-color); 
+            color: #fff; 
+            font-family: -apple-system, system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px;
         }
-        
-        h1 {
-            color: #333;
-            text-align: center;
+
+        .header { margin-bottom: 40px; text-align: center; }
+        .header h1 { font-size: 2.5rem; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .status-bar { background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 20px; font-size: 0.9rem; color: #94a3b8; border: 1px solid rgba(255,255,255,0.1); margin-top: 10px; }
+
+        /* 十字路口容器 */
+        .crossroad {
+            position: relative;
+            width: 500px;
+            height: 500px;
+            background: var(--dim-light);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
-        
-        .connection-status {
+
+        /* 道路 */
+        .road-ns { position: absolute; left: 175px; width: 150px; height: 100%; background: var(--road-color); border-left: 4px dashed var(--line-color); border-right: 4px dashed var(--line-color); }
+        .road-ew { position: absolute; top: 175px; width: 100%; height: 150px; background: var(--road-color); border-top: 4px dashed var(--line-color); border-bottom: 4px dashed var(--line-color); }
+
+        /* 红绿灯组件 */
+        .traffic-light {
+            position: absolute;
+            background: #000;
             padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-            text-align: center;
-            font-weight: bold;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 1px solid #334155;
         }
-        
-        .connected {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .controls {
-            margin: 20px 0;
-        }
-        
-        input[type="text"] {
-            width: 70%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        
-        button {
-            padding: 10px 15px;
-            margin-left: 10px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        button:hover {
-            background-color: #0056b3;
-        }
-        
-        button:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
-        }
-        
-        .messages {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 10px;
-            background-color: #f9f9f9;
-            border-radius: 4px;
-            margin-top: 20px;
-        }
-        
-        .message {
-            margin-bottom: 10px;
-            padding: 5px;
-            border-radius: 3px;
-        }
-        
-        .message.incoming {
-            background-color: #e7f3ff;
-            border-left: 3px solid #007bff;
-        }
-        
-        .message.outgoing {
-            background-color: #e7ffe7;
-            border-left: 3px solid #28a745;
-        }
-        
-        .message.system {
-            background-color: #fff3cd;
-            border-left: 3px solid #ffc107;
-            font-style: italic;
-        }
-        
-        .info-panel {
-            margin-top: 20px;
+
+        .light-circle { width: 30px; height: 30px; border-radius: 50%; background: #111; transition: all 0.3s; }
+        .timer { font-family: monospace; font-size: 1.2rem; font-weight: bold; text-align: center; margin-top: 5px; color: #fff; }
+
+        /* 四个方向的灯位 */
+        .tl-north { top: 20px; left: 340px; }
+        .tl-south { bottom: 20px; left: 120px; }
+        .tl-east { right: 20px; top: 120px; flex-direction: row-reverse; }
+        .tl-west { left: 20px; bottom: 120px; flex-direction: row; }
+
+        /* 激活状态样式 */
+        .active-red { background: var(--red-light); box-shadow: 0 0 20px var(--red-light); }
+        .active-green { background: var(--green-light); box-shadow: 0 0 20px var(--green-light); }
+        .active-yellow { background: var(--yellow-light); box-shadow: 0 0 20px var(--yellow-light); }
+
+        .log-panel {
+            margin-top: 30px;
+            width: 500px;
+            height: 150px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
             padding: 15px;
-            background-color: #e7f3ff;
-            border-radius: 4px;
-            border-left: 3px solid #007bff;
+            font-family: monospace;
+            font-size: 0.85rem;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.1);
         }
+        .log-line { color: #4ade80; margin-bottom: 4px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>LibWeb WebSocket Demo</h1>
-        
-        <div id="status" class="connection-status disconnected">Disconnected</div>
-        
-        <div class="controls">
-            <button id="connectBtn">Connect</button>
-            <button id="disconnectBtn" disabled>Disconnect</button>
-            <button id="pingBtn" disabled>Send Ping</button>
+    <div class="header">
+        <h1>智慧路口 V2X 监控中心</h1>
+        <div id="connection-status" class="status-bar">等待连接服务器...</div>
+    </div>
+
+    <div class="crossroad">
+        <div class="road-ns"></div>
+        <div class="road-ew"></div>
+
+        <!-- 南北向灯 (North) -->
+        <div class="traffic-light tl-north" id="light-ns">
+            <div class="light-circle red"></div>
+            <div class="light-circle yellow"></div>
+            <div class="light-circle green"></div>
+            <div class="timer" id="timer-ns">--</div>
         </div>
-        
-        <div class="controls">
-            <input type="text" id="messageInput" placeholder="Type your message here...">
-            <button id="sendBtn" disabled>Send</button>
-        </div>
-        
-        <div class="messages" id="messages">
-            <div class="message system">Welcome to LibWeb WebSocket Demo!</div>
-            <div class="message system">Click "Connect" to establish a WebSocket connection.</div>
-        </div>
-        
-        <div class="info-panel">
-            <h3>About this demo:</h3>
-            <p>This demo shows a WebSocket server implemented with libwebsockets in C and a JavaScript client.</p>
-            <p>Features:</p>
-            <ul>
-                <li>Real-time bidirectional communication</li>
-                <li>HTTP server serving this page</li>
-                <li>Message broadcasting to all connected clients</li>
-                <li>Ping/Pong functionality</li>
-            </ul>
+
+        <!-- 东西向灯 (East) -->
+        <div class="traffic-light tl-east" id="light-ew">
+            <div class="light-circle red"></div>
+            <div class="light-circle yellow"></div>
+            <div class="light-circle green"></div>
+            <div class="timer" id="timer-ew">--</div>
         </div>
     </div>
 
+    <div class="log-panel" id="logs">
+        <div class="log-line">>> 系统就绪，正在初始化 WebSocket 通道...</div>
+    </div>
+
     <script>
-        let ws = null;
-        let isConnected = false;
+        const logPanel = document.getElementById('logs');
+        const statusEl = document.getElementById('connection-status');
         
-        // DOM elements
-        const connectBtn = document.getElementById('connectBtn');
-        const disconnectBtn = document.getElementById('disconnectBtn');
-        const pingBtn = document.getElementById('pingBtn');
-        const sendBtn = document.getElementById('sendBtn');
-        const messageInput = document.getElementById('messageInput');
-        const statusDiv = document.getElementById('status');
-        const messagesDiv = document.getElementById('messages');
-        
-        // Add message to the display
-        function addMessage(text, type = 'incoming') {
-            const messageEl = document.createElement('div');
-            messageEl.className = `message ${type}`;
-            messageEl.textContent = `${new Date().toLocaleTimeString()} - ${text}`;
-            messagesDiv.appendChild(messageEl);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        function addLog(msg) {
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logPanel.appendChild(div);
+            logPanel.scrollTop = logPanel.scrollHeight;
         }
-        
-        // Update connection status
-        function updateStatus(connected) {
-            isConnected = connected;
-            if (connected) {
-                statusDiv.textContent = 'Connected to WebSocket server';
-                statusDiv.className = 'connection-status connected';
-                connectBtn.disabled = true;
-                disconnectBtn.disabled = false;
-                sendBtn.disabled = false;
-                pingBtn.disabled = false;
-            } else {
-                statusDiv.textContent = 'Disconnected from WebSocket server';
-                statusDiv.className = 'connection-status disconnected';
-                connectBtn.disabled = false;
-                disconnectBtn.disabled = true;
-                sendBtn.disabled = true;
-                pingBtn.disabled = true;
-            }
-        }
-        
-        // Connect to WebSocket server
+
+        let ws;
         function connect() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUri = `${protocol}//${window.location.hostname}:8080`;
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${proto}//${window.location.host}`, 'example-protocol');
+
+            ws.onopen = () => {
+                statusEl.textContent = '🟢 已连接服务器 (8080) | 实时数据流开启';
+                statusEl.style.color = '#4ade80';
+                addLog('WebSocket 连接已建立');
+            };
+
+            ws.onclose = () => {
+                statusEl.textContent = '🔴 连接已断开，正在尝试重连...';
+                statusEl.style.color = '#ef4444';
+                setTimeout(connect, 3000);
+            };
+
+            ws.onmessage = (evt) => {
+                const data = JSON.parse(evt.data);
+                if (data.type === 'traffic_update') {
+                    updateLight('ns', data.ns);
+                    updateLight('ew', data.ew);
+                }
+            };
+        }
+
+        function updateLight(direction, state) {
+            const container = document.getElementById(`light-${direction}`);
+            const timerEl = document.getElementById(`timer-${direction}`);
             
-            try {
-                ws = new WebSocket(wsUri, "example-protocol");
-                
-                ws.onopen = function(event) {
-                    console.log('Connected to WebSocket server');
-                    updateStatus(true);
-                    addMessage('Connected to server', 'system');
-                };
-                
-                ws.onmessage = function(event) {
-                    console.log('Received message:', event.data);
-                    try {
-                        // Try to parse as JSON
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'pong') {
-                            addMessage(`Server response: ${data.data}`, 'system');
-                        } else if (data.type === 'received') {
-                            addMessage(`Server received your message`, 'system');
-                        } else if (data.type === 'message') {
-                            addMessage(`From server: ${data.data}`, 'incoming');
-                        } else {
-                            addMessage(`Server: ${event.data}`, 'incoming');
-                        }
-                    } catch (e) {
-                        // If not JSON, treat as plain text
-                        addMessage(`Server: ${event.data}`, 'incoming');
-                    }
-                };
-                
-                ws.onclose = function(event) {
-                    console.log('Disconnected from WebSocket server');
-                    updateStatus(false);
-                    addMessage('Disconnected from server', 'system');
-                };
-                
-                ws.onerror = function(error) {
-                    console.error('WebSocket error:', error);
-                    addMessage('Connection error occurred', 'system');
-                };
-            } catch (e) {
-                console.error('Error connecting to WebSocket:', e);
-                addMessage('Error connecting to server', 'system');
-            }
+            // 重置所有灯
+            container.querySelectorAll('.light-circle').forEach(l => {
+                l.className = 'light-circle';
+            });
+
+            // 激活当前颜色
+            const activeLight = container.querySelector(`.${state.color}`);
+            activeLight.classList.add(`active-${state.color}`);
+            
+            // 更新倒计时
+            timerEl.textContent = state.timer.toString().padStart(2, '0');
+            timerEl.style.color = `var(--${state.color}-light)`;
         }
-        
-        // Disconnect from WebSocket server
-        function disconnect() {
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
-        }
-        
-        // Send message to server
-        function sendMessage() {
-            const message = messageInput.value.trim();
-            if (message && ws && isConnected) {
-                ws.send(message);
-                addMessage(`You: ${message}`, 'outgoing');
-                messageInput.value = '';
-            }
-        }
-        
-        // Send ping to server
-        function sendPing() {
-            if (ws && isConnected) {
-                ws.send('ping');
-                addMessage('Sent ping to server', 'system');
-            }
-        }
-        
-        // Event listeners
-        connectBtn.addEventListener('click', connect);
-        disconnectBtn.addEventListener('click', disconnect);
-        sendBtn.addEventListener('click', sendMessage);
-        pingBtn.addEventListener('click', sendPing);
-        
-        // Allow sending message with Enter key
-        messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-        
-        // Log page load
-        addMessage('Page loaded', 'system');
+
+        connect();
     </script>
 </body>
 </html>
