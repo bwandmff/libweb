@@ -92,16 +92,18 @@ static int callback_example(struct lws *wsi, enum lws_callback_reasons reason,
         case LWS_CALLBACK_RECEIVE: {
             lwsl_user("Received data: %s\n", (char *)in);
             
-            // 回显接收到的消息给所有客户端
-            char response[512];
-            snprintf(response, sizeof(response), "{\"type\":\"message\",\"data\":\"%s\",\"from\":\"client\"}", (char *)in);
-            broadcast_message(response, strlen(response));
-            
             // 检查是否是特殊命令
             if (strncmp((char *)in, "ping", 4) == 0) {
                 const char *pong_msg = "{\"type\":\"pong\",\"data\":\"Server pong\"}";
                 if (lws_write(wsi, (unsigned char *)pong_msg, strlen(pong_msg), LWS_WRITE_TEXT) < 0) {
                     lwsl_err("Failed to write pong message\n");
+                    return -1;
+                }
+            } else {
+                // 对于所有其他消息，返回 "received" 确认
+                const char *received_msg = "{\"type\":\"received\",\"data\":\"received\"}";
+                if (lws_write(wsi, (unsigned char *)received_msg, strlen(received_msg), LWS_WRITE_TEXT) < 0) {
+                    lwsl_err("Failed to write received confirmation\n");
                     return -1;
                 }
             }
