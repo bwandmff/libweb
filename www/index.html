@@ -3,178 +3,293 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MEC 智慧路口监控系统</title>
+    <title>MEC 智慧路口监控</title>
+    <link rel="icon" href="data:,">
     <style>
-        :root {
-            --bg-color: #0f172a;
-            --road-color: #334155;
-            --line-color: #cbd5e1;
-            --red-light: #ef4444;
-            --green-light: #22c55e;
-            --yellow-light: #eab308;
-            --dim-light: #1e293b;
-        }
-
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            background: var(--bg-color); 
-            color: #fff; 
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             font-family: -apple-system, system-ui, sans-serif;
+            color: #fff;
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh;
-            padding: 40px;
+            padding: 30px 20px;
+        }
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .status {
+            background: rgba(255,255,255,0.1);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-bottom: 30px;
+        }
+        .status.online { color: #4ade80; }
+        .status.offline { color: #f87171; }
+
+        .main {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
         }
 
-        .header { margin-bottom: 40px; text-align: center; }
-        .header h1 { font-size: 2.5rem; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .status-bar { background: rgba(255,255,255,0.05); padding: 10px 20px; border-radius: 20px; font-size: 0.9rem; color: #94a3b8; border: 1px solid rgba(255,255,255,0.1); margin-top: 10px; }
-
-        /* 十字路口容器 */
-        .crossroad {
-            position: relative;
-            width: 500px;
-            height: 500px;
-            background: var(--dim-light);
+        /* 路口视图 */
+        .intersection {
+            width: 400px;
+            height: 400px;
+            background: #0f172a;
             border-radius: 20px;
-            overflow: hidden;
+            position: relative;
             box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
+        .road-v {
+            position: absolute;
+            left: 50%; top: 0;
+            transform: translateX(-50%);
+            width: 100px; height: 100%;
+            background: #334155;
+            border-left: 2px dashed rgba(255,255,255,0.3);
+            border-right: 2px dashed rgba(255,255,255,0.3);
+        }
+        .road-h {
+            position: absolute;
+            top: 50%; left: 0;
+            transform: translateY(-50%);
+            width: 100%; height: 100px;
+            background: #334155;
+            border-top: 2px dashed rgba(255,255,255,0.3);
+            border-bottom: 2px dashed rgba(255,255,255,0.3);
+        }
+        .center-line-v {
+            position: absolute;
+            left: 50%; top: 0;
+            transform: translateX(-50%);
+            width: 2px; height: 100%;
+            background: repeating-linear-gradient(180deg, transparent 0, transparent 15px, #fbbf24 15px, #fbbf24 30px);
+        }
+        .center-line-h {
+            position: absolute;
+            top: 50%; left: 0;
+            transform: translateY(-50%);
+            height: 2px; width: 100%;
+            background: repeating-linear-gradient(90deg, transparent 0, transparent 15px, #fbbf24 15px, #fbbf24 30px);
+        }
 
-        /* 道路 */
-        .road-ns { position: absolute; left: 175px; width: 150px; height: 100%; background: var(--road-color); border-left: 4px dashed var(--line-color); border-right: 4px dashed var(--line-color); }
-        .road-ew { position: absolute; top: 175px; width: 100%; height: 150px; background: var(--road-color); border-top: 4px dashed var(--line-color); border-bottom: 4px dashed var(--line-color); }
-
-        /* 红绿灯组件 */
-        .traffic-light {
+        /* 红绿灯 */
+        .tl {
             position: absolute;
             background: #000;
-            padding: 10px;
-            border-radius: 12px;
+            border-radius: 10px;
+            padding: 8px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            border: 1px solid #334155;
+            gap: 6px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.5);
         }
+        .tl-ns-top { top: 20px; right: 60px; }
+        .tl-ns-bot { bottom: 20px; left: 60px; }
+        .tl-ew-right { right: 20px; bottom: 60px; flex-direction: row; }
+        .tl-ew-left { left: 20px; top: 60px; flex-direction: row; }
 
-        .light-circle { width: 30px; height: 30px; border-radius: 50%; background: #111; transition: all 0.3s; }
-        .timer { font-family: monospace; font-size: 1.2rem; font-weight: bold; text-align: center; margin-top: 5px; color: #fff; }
+        .bulb {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            background: #222;
+            transition: all 0.3s;
+        }
+        .bulb.red.on { background: #ef4444; box-shadow: 0 0 20px #ef4444; }
+        .bulb.yellow.on { background: #eab308; box-shadow: 0 0 20px #eab308; }
+        .bulb.green.on { background: #22c55e; box-shadow: 0 0 20px #22c55e; }
 
-        /* 四个方向的灯位 */
-        .tl-north { top: 20px; left: 340px; }
-        .tl-south { bottom: 20px; left: 120px; }
-        .tl-east { right: 20px; top: 120px; flex-direction: row-reverse; }
-        .tl-west { left: 20px; bottom: 120px; flex-direction: row; }
-
-        /* 激活状态样式 */
-        .active-red { background: var(--red-light); box-shadow: 0 0 20px var(--red-light); }
-        .active-green { background: var(--green-light); box-shadow: 0 0 20px var(--green-light); }
-        .active-yellow { background: var(--yellow-light); box-shadow: 0 0 20px var(--yellow-light); }
-
-        .log-panel {
-            margin-top: 30px;
-            width: 500px;
-            height: 150px;
-            background: rgba(0,0,0,0.3);
-            border-radius: 12px;
-            padding: 15px;
+        .timer {
+            position: absolute;
             font-family: monospace;
-            font-size: 0.85rem;
-            overflow-y: auto;
-            border: 1px solid rgba(255,255,255,0.1);
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px currentColor;
         }
-        .log-line { color: #4ade80; margin-bottom: 4px; }
+        .timer-ns { top: 30px; right: 20px; }
+        .timer-ew { right: 30px; bottom: 20px; }
+
+        /* 侧栏 */
+        .panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+            width: 280px;
+        }
+        .panel h2 {
+            font-size: 1rem;
+            color: #94a3b8;
+            margin-bottom: 15px;
+            border-left: 3px solid #7b2ff7;
+            padding-left: 10px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #94a3b8; }
+        .info-value { font-weight: bold; font-family: monospace; }
+        .info-value.red { color: #ef4444; }
+        .info-value.yellow { color: #eab308; }
+        .info-value.green { color: #22c55e; }
+
+        .logs {
+            margin-top: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        .logs div { color: #4ade80; padding: 3px 0; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>智慧路口 V2X 监控中心</h1>
-        <div id="connection-status" class="status-bar">等待连接服务器...</div>
-    </div>
+    <h1>🚦 智慧路口监控中心</h1>
+    <div class="status offline" id="status">● 等待连接...</div>
 
-    <div class="crossroad">
-        <div class="road-ns"></div>
-        <div class="road-ew"></div>
+    <div class="main">
+        <div class="intersection">
+            <div class="road-v"></div>
+            <div class="road-h"></div>
+            <div class="center-line-v"></div>
+            <div class="center-line-h"></div>
 
-        <!-- 南北向灯 (North) -->
-        <div class="traffic-light tl-north" id="light-ns">
-            <div class="light-circle red"></div>
-            <div class="light-circle yellow"></div>
-            <div class="light-circle green"></div>
-            <div class="timer" id="timer-ns">--</div>
+            <!-- 南北向灯 -->
+            <div class="tl tl-ns-top" id="tl-ns-1">
+                <div class="bulb red"></div>
+                <div class="bulb yellow"></div>
+                <div class="bulb green"></div>
+            </div>
+            <div class="tl tl-ns-bot" id="tl-ns-2">
+                <div class="bulb red"></div>
+                <div class="bulb yellow"></div>
+                <div class="bulb green"></div>
+            </div>
+            <div class="timer timer-ns" id="timer-ns">--</div>
+
+            <!-- 东西向灯 -->
+            <div class="tl tl-ew-right" id="tl-ew-1">
+                <div class="bulb red"></div>
+                <div class="bulb yellow"></div>
+                <div class="bulb green"></div>
+            </div>
+            <div class="tl tl-ew-left" id="tl-ew-2">
+                <div class="bulb red"></div>
+                <div class="bulb yellow"></div>
+                <div class="bulb green"></div>
+            </div>
+            <div class="timer timer-ew" id="timer-ew">--</div>
         </div>
 
-        <!-- 东西向灯 (East) -->
-        <div class="traffic-light tl-east" id="light-ew">
-            <div class="light-circle red"></div>
-            <div class="light-circle yellow"></div>
-            <div class="light-circle green"></div>
-            <div class="timer" id="timer-ew">--</div>
+        <div class="panel">
+            <h2>信号状态</h2>
+            <div class="info-row">
+                <span class="info-label">南北方向</span>
+                <span class="info-value" id="ns-info">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">东西方向</span>
+                <span class="info-value" id="ew-info">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">消息数</span>
+                <span class="info-value" id="msg-count">0</span>
+            </div>
+            <h2 style="margin-top:20px">日志</h2>
+            <div class="logs" id="logs"></div>
         </div>
-    </div>
-
-    <div class="log-panel" id="logs">
-        <div class="log-line">>> 系统就绪，正在初始化 WebSocket 通道...</div>
     </div>
 
     <script>
-        const logPanel = document.getElementById('logs');
-        const statusEl = document.getElementById('connection-status');
-        
-        function addLog(msg) {
-            const div = document.createElement('div');
-            div.className = 'log-line';
-            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            logPanel.appendChild(div);
-            logPanel.scrollTop = logPanel.scrollHeight;
+        const statusEl = document.getElementById('status');
+        const logsEl = document.getElementById('logs');
+        const msgCountEl = document.getElementById('msg-count');
+        let msgCount = 0;
+
+        function log(msg) {
+            const d = document.createElement('div');
+            d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logsEl.appendChild(d);
+            logsEl.scrollTop = logsEl.scrollHeight;
         }
 
-        let ws;
+        function setLight(prefix, color) {
+            ['1','2'].forEach(n => {
+                const el = document.getElementById(`tl-${prefix}-${n}`);
+                if (!el) return;
+                el.querySelectorAll('.bulb').forEach(b => b.classList.remove('on'));
+                const bulb = el.querySelector(`.bulb.${color}`);
+                if (bulb) bulb.classList.add('on');
+            });
+        }
+
+        function update(data) {
+            if (!data.ns || !data.ew) return;
+            
+            setLight('ns', data.ns.color);
+            setLight('ew', data.ew.color);
+            
+            const timerNs = document.getElementById('timer-ns');
+            const timerEw = document.getElementById('timer-ew');
+            timerNs.textContent = String(data.ns.timer).padStart(2,'0');
+            timerEw.textContent = String(data.ew.timer).padStart(2,'0');
+            timerNs.style.color = `var(--${data.ns.color})`;
+            timerEw.style.color = `var(--${data.ew.color})`;
+            
+            const colors = {red:'#ef4444', yellow:'#eab308', green:'#22c55e'};
+            timerNs.style.color = colors[data.ns.color];
+            timerEw.style.color = colors[data.ew.color];
+            
+            const names = {red:'红灯', yellow:'黄灯', green:'绿灯'};
+            document.getElementById('ns-info').textContent = `${names[data.ns.color]} ${data.ns.timer}s`;
+            document.getElementById('ns-info').className = `info-value ${data.ns.color}`;
+            document.getElementById('ew-info').textContent = `${names[data.ew.color]} ${data.ew.timer}s`;
+            document.getElementById('ew-info').className = `info-value ${data.ew.color}`;
+        }
+
         function connect() {
-            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${proto}//${window.location.host}`, 'example-protocol');
-
+            const ws = new WebSocket(`ws://${location.host}`, 'traffic-protocol');
+            
             ws.onopen = () => {
-                statusEl.textContent = '🟢 已连接服务器 (8080) | 实时数据流开启';
-                statusEl.style.color = '#4ade80';
-                addLog('WebSocket 连接已建立');
+                statusEl.textContent = '● 已连接';
+                statusEl.className = 'status online';
+                log('WebSocket 连接成功');
             };
-
+            
             ws.onclose = () => {
-                statusEl.textContent = '🔴 连接已断开，正在尝试重连...';
-                statusEl.style.color = '#ef4444';
+                statusEl.textContent = '● 已断开';
+                statusEl.className = 'status offline';
+                log('连接断开，3秒后重连');
                 setTimeout(connect, 3000);
             };
-
-            ws.onmessage = (evt) => {
-                const data = JSON.parse(evt.data);
-                if (data.type === 'traffic_update') {
-                    updateLight('ns', data.ns);
-                    updateLight('ew', data.ew);
-                }
+            
+            ws.onerror = (e) => log('连接错误');
+            
+            ws.onmessage = (e) => {
+                msgCount++;
+                msgCountEl.textContent = msgCount;
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.type === 'traffic_update') update(data);
+                } catch(err) { console.error(err); }
             };
         }
 
-        function updateLight(direction, state) {
-            const container = document.getElementById(`light-${direction}`);
-            const timerEl = document.getElementById(`timer-${direction}`);
-            
-            // 重置所有灯
-            container.querySelectorAll('.light-circle').forEach(l => {
-                l.className = 'light-circle';
-            });
-
-            // 激活当前颜色
-            const activeLight = container.querySelector(`.${state.color}`);
-            activeLight.classList.add(`active-${state.color}`);
-            
-            // 更新倒计时
-            timerEl.textContent = state.timer.toString().padStart(2, '0');
-            timerEl.style.color = `var(--${state.color}-light)`;
-        }
-
+        log('初始化...');
         connect();
     </script>
 </body>
