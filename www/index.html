@@ -42,7 +42,6 @@
             align-items: flex-start;
         }
 
-        /* 路口视图 */
         .intersection {
             width: 400px;
             height: 400px;
@@ -57,8 +56,6 @@
             transform: translateX(-50%);
             width: 100px; height: 100%;
             background: #334155;
-            border-left: 2px dashed rgba(255,255,255,0.3);
-            border-right: 2px dashed rgba(255,255,255,0.3);
         }
         .road-h {
             position: absolute;
@@ -66,25 +63,8 @@
             transform: translateY(-50%);
             width: 100%; height: 100px;
             background: #334155;
-            border-top: 2px dashed rgba(255,255,255,0.3);
-            border-bottom: 2px dashed rgba(255,255,255,0.3);
-        }
-        .center-line-v {
-            position: absolute;
-            left: 50%; top: 0;
-            transform: translateX(-50%);
-            width: 2px; height: 100%;
-            background: repeating-linear-gradient(180deg, transparent 0, transparent 15px, #fbbf24 15px, #fbbf24 30px);
-        }
-        .center-line-h {
-            position: absolute;
-            top: 50%; left: 0;
-            transform: translateY(-50%);
-            height: 2px; width: 100%;
-            background: repeating-linear-gradient(90deg, transparent 0, transparent 15px, #fbbf24 15px, #fbbf24 30px);
         }
 
-        /* 红绿灯 */
         .tl {
             position: absolute;
             background: #000;
@@ -113,14 +93,16 @@
         .timer {
             position: absolute;
             font-family: monospace;
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             font-weight: bold;
             text-shadow: 0 0 10px currentColor;
         }
-        .timer-ns { top: 30px; right: 20px; }
-        .timer-ew { right: 30px; bottom: 20px; }
+        .timer-ns { top: 30px; right: 15px; }
+        .timer-ew { right: 25px; bottom: 15px; }
+        .timer.red { color: #ef4444; }
+        .timer.yellow { color: #eab308; }
+        .timer.green { color: #22c55e; }
 
-        /* 侧栏 */
         .panel {
             background: rgba(255,255,255,0.05);
             border-radius: 16px;
@@ -140,7 +122,6 @@
             padding: 10px 0;
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .info-row:last-child { border-bottom: none; }
         .info-label { color: #94a3b8; }
         .info-value { font-weight: bold; font-family: monospace; }
         .info-value.red { color: #ef4444; }
@@ -151,24 +132,21 @@
             margin-top: 15px;
             max-height: 150px;
             overflow-y: auto;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-family: monospace;
         }
-        .logs div { color: #4ade80; padding: 3px 0; }
+        .logs div { color: #4ade80; padding: 2px 0; }
     </style>
 </head>
 <body>
     <h1>🚦 智慧路口监控中心</h1>
-    <div class="status offline" id="status">● 等待连接...</div>
+    <div class="status offline" id="status">● 连接中...</div>
 
     <div class="main">
         <div class="intersection">
             <div class="road-v"></div>
             <div class="road-h"></div>
-            <div class="center-line-v"></div>
-            <div class="center-line-h"></div>
 
-            <!-- 南北向灯 -->
             <div class="tl tl-ns-top" id="tl-ns-1">
                 <div class="bulb red"></div>
                 <div class="bulb yellow"></div>
@@ -179,9 +157,8 @@
                 <div class="bulb yellow"></div>
                 <div class="bulb green"></div>
             </div>
-            <div class="timer timer-ns" id="timer-ns">--</div>
+            <div class="timer timer-ns red" id="timer-ns">--</div>
 
-            <!-- 东西向灯 -->
             <div class="tl tl-ew-right" id="tl-ew-1">
                 <div class="bulb red"></div>
                 <div class="bulb yellow"></div>
@@ -192,7 +169,7 @@
                 <div class="bulb yellow"></div>
                 <div class="bulb green"></div>
             </div>
-            <div class="timer timer-ew" id="timer-ew">--</div>
+            <div class="timer timer-ew green" id="timer-ew">--</div>
         </div>
 
         <div class="panel">
@@ -209,6 +186,10 @@
                 <span class="info-label">消息数</span>
                 <span class="info-value" id="msg-count">0</span>
             </div>
+            <div class="info-row">
+                <span class="info-label">数据源</span>
+                <span class="info-value" id="data-source">--</span>
+            </div>
             <h2 style="margin-top:20px">日志</h2>
             <div class="logs" id="logs"></div>
         </div>
@@ -218,13 +199,24 @@
         const statusEl = document.getElementById('status');
         const logsEl = document.getElementById('logs');
         const msgCountEl = document.getElementById('msg-count');
+        const dataSourceEl = document.getElementById('data-source');
+        
         let msgCount = 0;
+        let ws = null;
+        let wsConnected = false;
+        
+        // 本地模拟状态（当WebSocket断开时使用）
+        let localState = {
+            ns: { color: 'green', timer: 30 },
+            ew: { color: 'red', timer: 33 }
+        };
 
         function log(msg) {
             const d = document.createElement('div');
             d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
             logsEl.appendChild(d);
             logsEl.scrollTop = logsEl.scrollHeight;
+            if (logsEl.children.length > 30) logsEl.removeChild(logsEl.firstChild);
         }
 
         function setLight(prefix, color) {
@@ -237,59 +229,101 @@
             });
         }
 
-        function update(data) {
-            if (!data.ns || !data.ew) return;
+        function updateUI(ns, ew, source) {
+            if (!ns || !ew) return;
             
-            setLight('ns', data.ns.color);
-            setLight('ew', data.ew.color);
+            setLight('ns', ns.color);
+            setLight('ew', ew.color);
             
             const timerNs = document.getElementById('timer-ns');
             const timerEw = document.getElementById('timer-ew');
-            timerNs.textContent = String(data.ns.timer).padStart(2,'0');
-            timerEw.textContent = String(data.ew.timer).padStart(2,'0');
-            timerNs.style.color = `var(--${data.ns.color})`;
-            timerEw.style.color = `var(--${data.ew.color})`;
             
-            const colors = {red:'#ef4444', yellow:'#eab308', green:'#22c55e'};
-            timerNs.style.color = colors[data.ns.color];
-            timerEw.style.color = colors[data.ew.color];
+            timerNs.textContent = String(ns.timer).padStart(2, '0');
+            timerEw.textContent = String(ew.timer).padStart(2, '0');
+            timerNs.className = `timer timer-ns ${ns.color}`;
+            timerEw.className = `timer timer-ew ${ew.color}`;
             
             const names = {red:'红灯', yellow:'黄灯', green:'绿灯'};
-            document.getElementById('ns-info').textContent = `${names[data.ns.color]} ${data.ns.timer}s`;
-            document.getElementById('ns-info').className = `info-value ${data.ns.color}`;
-            document.getElementById('ew-info').textContent = `${names[data.ew.color]} ${data.ew.timer}s`;
-            document.getElementById('ew-info').className = `info-value ${data.ew.color}`;
+            document.getElementById('ns-info').textContent = `${names[ns.color]} ${ns.timer}s`;
+            document.getElementById('ns-info').className = `info-value ${ns.color}`;
+            document.getElementById('ew-info').textContent = `${names[ew.color]} ${ew.timer}s`;
+            document.getElementById('ew-info').className = `info-value ${ew.color}`;
+            
+            dataSourceEl.textContent = source;
+            dataSourceEl.className = source === 'WS' ? 'info-value green' : 'info-value yellow';
+        }
+
+        // 本地倒计时模拟
+        function tickLocal() {
+            localState.ns.timer--;
+            if (localState.ns.timer <= 0) {
+                if (localState.ns.color === 'green') { localState.ns.color = 'yellow'; localState.ns.timer = 3; }
+                else if (localState.ns.color === 'yellow') { localState.ns.color = 'red'; localState.ns.timer = 30; }
+                else { localState.ns.color = 'green'; localState.ns.timer = 30; }
+            }
+            localState.ew.timer--;
+            if (localState.ew.timer <= 0) {
+                if (localState.ew.color === 'red') { localState.ew.color = 'green'; localState.ew.timer = 30; }
+                else if (localState.ew.color === 'green') { localState.ew.color = 'yellow'; localState.ew.timer = 3; }
+                else { localState.ew.color = 'red'; localState.ew.timer = 30; }
+            }
         }
 
         function connect() {
-            const ws = new WebSocket(`ws://${location.host}`, 'traffic-protocol');
+            if (ws && ws.readyState === WebSocket.OPEN) return;
             
-            ws.onopen = () => {
-                statusEl.textContent = '● 已连接';
-                statusEl.className = 'status online';
-                log('WebSocket 连接成功');
-            };
-            
-            ws.onclose = () => {
-                statusEl.textContent = '● 已断开';
-                statusEl.className = 'status offline';
-                log('连接断开，3秒后重连');
-                setTimeout(connect, 3000);
-            };
-            
-            ws.onerror = (e) => log('连接错误');
-            
-            ws.onmessage = (e) => {
-                msgCount++;
-                msgCountEl.textContent = msgCount;
-                try {
-                    const data = JSON.parse(e.data);
-                    if (data.type === 'traffic_update') update(data);
-                } catch(err) { console.error(err); }
-            };
+            try {
+                ws = new WebSocket(`ws://${location.host}`, 'traffic-protocol');
+                
+                ws.onopen = () => {
+                    wsConnected = true;
+                    statusEl.textContent = '● 已连接 (WebSocket)';
+                    statusEl.className = 'status online';
+                    log('WebSocket 连接成功');
+                };
+                
+                ws.onclose = () => {
+                    wsConnected = false;
+                    statusEl.textContent = '● 本地模式';
+                    statusEl.className = 'status offline';
+                    log('WebSocket 断开，使用本地模拟');
+                    setTimeout(connect, 3000);
+                };
+                
+                ws.onerror = () => {
+                    wsConnected = false;
+                };
+                
+                ws.onmessage = (e) => {
+                    msgCount++;
+                    msgCountEl.textContent = msgCount;
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.type === 'traffic_update') {
+                            // 同步本地状态
+                            localState.ns = { ...data.ns };
+                            localState.ew = { ...data.ew };
+                            updateUI(data.ns, data.ew, 'WS');
+                        }
+                    } catch(err) { 
+                        console.error('Parse error:', err); 
+                    }
+                };
+            } catch(e) {
+                log('连接失败: ' + e.message);
+            }
         }
 
-        log('初始化...');
+        // 每秒更新一次
+        setInterval(() => {
+            if (!wsConnected) {
+                // WebSocket 断开时使用本地模拟
+                tickLocal();
+                updateUI(localState.ns, localState.ew, '本地');
+            }
+        }, 1000);
+
+        log('系统启动...');
         connect();
     </script>
 </body>
